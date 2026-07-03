@@ -1,17 +1,24 @@
 {
   "id": "tasks",
   "name": "Tasks",
-  "version": "1.0.0",
-  "description": "See your agent's scheduled check-ins at a glance — status, due times, and what needs attention. Reschedule or cancel through the agent.",
+  "version": "1.0.1",
+  "description": "See your agent's scheduled check-ins at a glance \u2014 status, due times, and what needs attention. Reschedule or cancel through the agent.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-tasks",
   "entry": "index.jsx",
   "icon": "icon.png",
   "offline_capable": false,
-  "permissions": { "cross_app_access": "read", "share_with_apps": "none" },
+  "permissions": {
+    "cross_app_access": "none",
+    "share_with_apps": "none"
+  },
   "runtime": {
-    "imports": ["react", "react-dom", "date-fns"],
+    "imports": [
+      "react",
+      "react-dom",
+      "date-fns"
+    ],
     "esm_deps": []
   },
   "offline": {
