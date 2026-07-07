@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { formatDistanceToNow, format } from 'date-fns'
+import { readTasks, sortTasks, normalizeUnixSeconds } from './domain.js'
 
 // Tasks — a viewer for the agent's scheduled check-ins (its "self-reminders":
 // the relational follow-ups the Möbius agent schedules for itself, stored append-
-// only at /data/shared/self-reminders.jsonl). Inspired by the Tasks screen in
-// Hermex, which surfaces the agent's scheduled cron jobs. A mini-app can READ
-// shared storage but not WRITE it, and scheduling is owner-only, so creating /
-// rescheduling / cancelling a task is routed to the agent via a new chat.
+// only at /data/shared/self-reminders.jsonl as JSONL records shaped like
+// {id,note,status,due_at,created_at}. due_at and created_at are Unix seconds;
+// last record per id wins. A mini-app can READ shared storage but not WRITE it,
+// and scheduling is owner-only, so creating / rescheduling / cancelling a task
+// is routed to the agent via a new chat.
 
 const CSS = `
 /* mobius-ui:Root v1 — keep in sync; library candidate. */
@@ -27,7 +29,7 @@ const CSS = `
 .tk-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.015em; }
 .tk-subtitle { display: block; margin-top: 1px; font-size: 12px; color: var(--muted); }
 .tk-actions { display: flex; gap: 8px; }
-.tk-iconbtn { flex: 0 0 auto; width: 40px; height: 40px; display: inline-flex; align-items: center;
+.tk-iconbtn { flex: 0 0 auto; width: 44px; height: 44px; display: inline-flex; align-items: center;
   justify-content: center; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
   color: var(--text); cursor: pointer; transition: background .14s ease, transform .1s ease; }
 .tk-iconbtn:active { transform: scale(0.94); }
@@ -37,10 +39,16 @@ const CSS = `
 @keyframes tk-spin { to { transform: rotate(360deg); } }
 /* /mobius-ui:Header */
 
-/* summary pill */
+/* status pill */
 .tk-summary { display: flex; align-items: center; gap: 10px; margin: 14px 16px 6px; padding: 13px 16px;
-  border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+  border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
 .tk-summary.is-alert { background: color-mix(in srgb, var(--tk-amber) 12%, var(--surface)); border-color: color-mix(in srgb, var(--tk-amber) 40%, var(--border)); }
+.tk-sync-pill { display: flex; align-items: center; gap: 8px; margin: 12px 16px 0; padding: 10px 12px;
+  border-radius: 10px; border: 1px solid color-mix(in srgb, var(--tk-amber) 38%, var(--border));
+  background: color-mix(in srgb, var(--tk-amber) 10%, var(--surface)); color: var(--text);
+  font-size: 13px; line-height: 1.4; }
+.tk-sync-pill strong { font-weight: 700; }
+.tk-sync-pill svg { flex: 0 0 auto; width: 17px; height: 17px; color: var(--tk-amber); }
 .tk-summary-ico { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; color: var(--accent); }
 .tk-summary.is-alert .tk-summary-ico { color: var(--tk-amber); }
 .tk-summary-ico svg { width: 20px; height: 20px; }
@@ -51,10 +59,10 @@ const CSS = `
 .tk-section-title { margin: 18px 16px 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--muted); }
 
-/* cards */
+/* mobius-ui:Card v1 — keep in sync; library candidate. Diverge below the marker only. */
 .tk-list { display: flex; flex-direction: column; gap: 10px; padding: 8px 16px 0; }
 .tk-card { text-align: left; width: 100%; box-sizing: border-box; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 14px; padding: 15px 16px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; padding: 15px 16px; color: var(--text);
   font-family: var(--font); cursor: pointer; transition: transform .1s ease, border-color .14s ease; }
 .tk-card:active { transform: scale(0.99); }
 .tk-card.is-done { opacity: 0.62; }
@@ -71,8 +79,9 @@ const CSS = `
 .tk-meta-k { font-size: 12.5px; color: var(--muted); }
 .tk-meta-v { font-size: 12.5px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
 .tk-meta-v.is-attention { color: var(--tk-amber); font-weight: 650; }
+/* /mobius-ui:Card */
 
-/* empty / status */
+/* mobius-ui:Empty v1 — keep in sync; library candidate. Diverge below the marker only. */
 .tk-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
   margin: auto; padding: 56px 28px; color: var(--muted); }
 .tk-empty-mark { width: 64px; height: 64px; margin-bottom: 8px; border-radius: 18px; display: flex;
@@ -83,16 +92,30 @@ const CSS = `
 .tk-empty-text { margin: 0; font-size: 14px; line-height: 1.6; max-width: 32ch; }
 .tk-spinner { width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid var(--border);
   border-top-color: var(--accent); animation: tk-spin 0.8s linear infinite; }
+/* /mobius-ui:Empty */
+
+/* mobius-ui:Button v1 — keep in sync; library candidate. Diverge below the marker only. */
 .tk-btn { min-height: 44px; padding: 10px 18px; border-radius: 11px; border: 1px solid var(--border);
   background: var(--surface); color: var(--text); font-weight: 600; font-size: 14px; cursor: pointer;
   font-family: var(--font); transition: transform .1s ease; }
 .tk-btn:active { transform: scale(0.97); }
 .tk-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+/* /mobius-ui:Button */
+
+/* mobius-ui:Focus v1 — keep in sync; library candidate. Diverge below the marker only. */
+.tk-iconbtn:focus-visible,
+.tk-card:focus-visible,
+.tk-btn:focus-visible,
+.tk-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* /mobius-ui:Focus */
 
 /* detail */
 .tk-detail-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
   padding: 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.tk-back { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 6px 12px 6px 8px;
+.tk-back { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 8px 12px 8px 8px;
   border-radius: 10px; border: none; background: none; color: var(--accent); font-family: var(--font);
   font-size: 15px; font-weight: 600; cursor: pointer; }
 .tk-back svg { width: 20px; height: 20px; }
@@ -104,6 +127,20 @@ const CSS = `
 .tk-detail-v { font-size: 13.5px; text-align: right; font-weight: 500; word-break: break-word; }
 .tk-detail-actions { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
 .tk-hint { margin-top: 16px; font-size: 12.5px; color: var(--muted); text-align: center; line-height: 1.5; }
+.tk-rel-time { color: var(--muted); }
+
+/* mobius-ui:ReducedMotion v1 — keep in sync; library candidate. Diverge below the marker only. */
+@media (prefers-reduced-motion: reduce) {
+  .tk-iconbtn,
+  .tk-card,
+  .tk-btn { transition: none; }
+  .tk-iconbtn:active,
+  .tk-card:active,
+  .tk-btn:active { transform: none; }
+  .tk-iconbtn.is-spinning svg,
+  .tk-spinner { animation: none; }
+}
+/* /mobius-ui:ReducedMotion */
 `
 
 const CLOCK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
@@ -113,37 +150,15 @@ const REFRESH = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const PLUS = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5v14"/></svg>
 const BACK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
 
-// Fold the append-only JSONL: last record per id wins (same shape activity.jsonl uses).
-function foldReminders(text) {
-  const byId = new Map()
-  for (const line of (text || '').split('\n')) {
-    const s = line.trim()
-    if (!s) continue
-    try {
-      const r = JSON.parse(s)
-      if (r && r.id != null) byId.set(r.id, r)
-    } catch { /* tolerate a malformed line, keep the rest */ }
-  }
-  return [...byId.values()]
-}
-
-// Derived status — mirrors Hermex's "Needs Attention" idea: a pending task whose
-// due time has passed is surfaced loudly rather than silently sitting active.
-function statusOf(task, now) {
-  if (task.status === 'cancelled') return { key: 'cancelled', label: 'Cancelled', tone: 'muted', rank: 3 }
-  if (task.status === 'done') return { key: 'done', label: 'Done', tone: 'done', rank: 2 }
-  const due = (task.due_at || 0) * 1000
-  if (due && due <= now) return { key: 'attention', label: 'Needs Attention', tone: 'attention', rank: 0 }
-  return { key: 'scheduled', label: 'Scheduled', tone: 'active', rank: 1 }
-}
-
 function fmtAbs(unixSec) {
-  if (!unixSec) return '—'
-  try { return format(new Date(unixSec * 1000), 'MMM d, yyyy · h:mm a') } catch { return '—' }
+  const normalized = normalizeUnixSeconds(unixSec)
+  if (!normalized) return '—'
+  try { return format(new Date(normalized * 1000), 'MMM d, yyyy · h:mm a') } catch { return '—' }
 }
 function fmtRel(unixSec) {
-  if (!unixSec) return ''
-  try { return formatDistanceToNow(new Date(unixSec * 1000), { addSuffix: true }) } catch { return '' }
+  const normalized = normalizeUnixSeconds(unixSec)
+  if (!normalized) return ''
+  try { return formatDistanceToNow(new Date(normalized * 1000), { addSuffix: true }) } catch { return '' }
 }
 
 export default function TasksApp({ appId, token }) {
@@ -153,59 +168,97 @@ export default function TasksApp({ appId, token }) {
   const [now, setNow] = useState(() => Date.now())
   const [selected, setSelected] = useState(null) // task id
   const navRef = useRef(null)
+  const tasksRef = useRef(null)
 
   const authHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
 
-  async function load() {
-    setError(null)
-    try {
-      const res = await fetch('/api/storage/shared/self-reminders.jsonl', { headers: authHeaders })
-      if (res.status === 404) { setTasks([]); window.mobius?.signal?.('app_ready', { item_count: 0 }); return }
-      if (!res.ok) throw new Error(`load ${res.status}`)
-      const text = await res.text()
-      const folded = foldReminders(text)
-      setTasks(folded)
-      setNow(Date.now())
-      window.mobius?.signal?.('app_ready', { item_count: folded.length })
-    } catch (err) {
-      setError(err.message || 'Could not load tasks')
-      setTasks([])
-      window.mobius?.signal?.('error', { message: String(err.message || err), source: 'load' })
-    }
-  }
+  const getOnline = useCallback(() => {
+    if (window.mobius && typeof window.mobius.online === 'boolean') return window.mobius.online
+    if (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') return navigator.onLine
+    return true
+  }, [])
 
-  useEffect(() => { load() }, [])
-  // keep relative times fresh while open (shared storage has no subscribe())
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(t) }, [])
+  const load = useCallback(async () => {
+    setError(null)
+    const result = await readTasks({
+      fetchImpl: fetch,
+      authHeaders,
+      previousTasks: tasksRef.current,
+      signal: window.mobius?.signal?.bind(window.mobius),
+      online: getOnline(),
+    })
+    tasksRef.current = result.tasks
+    setTasks(result.tasks)
+    setError(result.error)
+    setNow(Date.now())
+  }, [authHeaders, getOnline])
+
+  useEffect(() => { load() }, [load])
+  // Keep relative times and shared JSONL fresh while visible (shared storage has no subscribe()).
+  useEffect(() => {
+    const refetchIfVisible = () => {
+      setNow(Date.now())
+      if (document.visibilityState !== 'hidden') load()
+    }
+    const onVisibility = () => { if (document.visibilityState === 'visible') refetchIfVisible() }
+    const onFocus = () => refetchIfVisible()
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    const t = setInterval(refetchIfVisible, 60000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+      clearInterval(t)
+    }
+  }, [load])
 
   async function refresh() { setRefreshing(true); await load(); setRefreshing(false) }
 
-  function askAgent(draft) {
-    window.parent.postMessage({ type: 'moebius:new-chat', draft }, window.location.origin)
+  function askAgent(draft, action) {
+    try {
+      window.mobius?.signal?.('agent_handoff', { action })
+      window.parent.postMessage({ type: 'moebius:new-chat', draft }, window.location.origin)
+    } catch (err) {
+      window.mobius?.signal?.('error', { message: String(err?.message || err), source: 'handoff' })
+    }
   }
 
-  function openTask(id) {
+  async function openTask(id) {
+    const task = sorted.find((t) => t.id === id)
     if (window.mobius?.nav?.open) {
+      let handle = null
       try {
-        const handle = window.mobius.nav.open('task-detail', () => { navRef.current = null; setSelected(null) })
+        handle = window.mobius.nav.open('task-detail', () => { navRef.current = null; setSelected(null) })
         navRef.current = handle
-      } catch {}
+        await handle.ready
+        if (navRef.current !== handle) return
+      } catch (err) {
+        if (navRef.current === handle) navRef.current = null
+        window.mobius?.signal?.('error', { message: String(err?.message || err), source: 'nav' })
+        return
+      }
     }
+    window.mobius?.signal?.('item_opened', { type: 'task', status: task?._s?.key || task?.status || 'unknown' })
     setSelected(id)
   }
   function closeTask() { try { navRef.current?.close?.() } catch {}; navRef.current = null; setSelected(null) }
 
   const sorted = useMemo(() => {
     if (!tasks) return []
-    return tasks
-      .map((t) => ({ ...t, _s: statusOf(t, now) }))
-      .sort((a, b) => (a._s.rank - b._s.rank) || ((a.due_at || Infinity) - (b.due_at || Infinity)))
+    return sortTasks(tasks, now)
   }, [tasks, now])
 
   const attentionCount = useMemo(() => sorted.filter((t) => t._s.key === 'attention').length, [sorted])
   const upcomingCount = useMemo(() => sorted.filter((t) => t._s.key === 'scheduled').length, [sorted])
 
   const current = selected && tasks ? sorted.find((t) => t.id === selected) : null
+
+  useEffect(() => {
+    if (!selected || !tasks) return
+    if (!tasks.some((t) => t.id === selected)) closeTask()
+  }, [selected, tasks])
 
   // ---- Detail view ----
   if (current) {
@@ -222,7 +275,7 @@ export default function TasksApp({ appId, token }) {
             <div className="tk-detail-badge"><span className={`tk-badge tone-${s.tone}`}>{s.label}</span></div>
             <div className="tk-detail-grid">
               <div className="tk-detail-k">Due</div>
-              <div className="tk-detail-v">{fmtAbs(current.due_at)}{fmtRel(current.due_at) && <><br /><span style={{ color: 'var(--muted)' }}>{fmtRel(current.due_at)}</span></>}</div>
+              <div className="tk-detail-v">{fmtAbs(current.due_at)}{fmtRel(current.due_at) && <><br /><span className="tk-rel-time">{fmtRel(current.due_at)}</span></>}</div>
               <div className="tk-detail-k">Created</div>
               <div className="tk-detail-v">{fmtAbs(current.created_at)}</div>
               <div className="tk-detail-k">Status</div>
@@ -231,12 +284,12 @@ export default function TasksApp({ appId, token }) {
             <div className="tk-detail-actions">
               {s.key !== 'done' && s.key !== 'cancelled' && (
                 <>
-                  <button className="tk-btn tk-btn-primary" onClick={() => askAgent(`Reschedule this check-in: "${current.note}". New timing: `)}>Ask agent to reschedule</button>
-                  <button className="tk-btn" onClick={() => askAgent(`Mark this check-in as done: "${current.note}".`)}>Mark done</button>
-                  <button className="tk-btn" onClick={() => askAgent(`Cancel this scheduled check-in: "${current.note}".`)}>Cancel task</button>
+                  <button className="tk-btn tk-btn-primary" onClick={() => askAgent(`Reschedule this check-in: "${current.note}". New timing: `, 'reschedule')}>Ask agent to reschedule</button>
+                  <button className="tk-btn" onClick={() => askAgent(`Mark this check-in as done: "${current.note}".`, 'done')}>Mark done</button>
+                  <button className="tk-btn" onClick={() => askAgent(`Cancel this scheduled check-in: "${current.note}".`, 'cancel')}>Cancel task</button>
                 </>
               )}
-              <button className="tk-btn" onClick={() => askAgent(`About my scheduled check-in "${current.note}": `)}>Discuss with agent</button>
+              <button className="tk-btn" onClick={() => askAgent(`About my scheduled check-in "${current.note}": `, 'discuss')}>Discuss with agent</button>
             </div>
             <p className="tk-hint">Scheduling lives with your agent — these actions open a chat so it can update the task.</p>
           </div>
@@ -259,7 +312,7 @@ export default function TasksApp({ appId, token }) {
           </div>
         </div>
         <div className="tk-actions">
-          <button className="tk-iconbtn" onClick={() => askAgent('Schedule a new check-in for me: remind me to ')} aria-label="Schedule a new task">{PLUS}</button>
+          <button className="tk-iconbtn" onClick={() => askAgent('Schedule a new check-in for me: remind me to ', 'new')} aria-label="Schedule a new task">{PLUS}</button>
           <button className={`tk-iconbtn${refreshing ? ' is-spinning' : ''}`} onClick={refresh} disabled={refreshing} aria-label="Refresh tasks">{REFRESH}</button>
         </div>
       </header>
@@ -267,11 +320,11 @@ export default function TasksApp({ appId, token }) {
       <div className="tk-scroll">
         {loading && <div className="tk-empty"><div className="tk-spinner" /><div className="tk-empty-title">Loading tasks…</div></div>}
 
-        {!loading && error && (
+        {!loading && error && sorted.length === 0 && (
           <div className="tk-empty">
             <div className="tk-empty-mark" aria-hidden="true">{ALERT}</div>
-            <div className="tk-empty-title">Couldn’t load tasks</div>
-            <p className="tk-empty-text">{error}</p>
+            <div className="tk-empty-title">{error.title}</div>
+            <p className="tk-empty-text">{error.message}</p>
             <button className="tk-btn" onClick={refresh}>Try again</button>
           </div>
         )}
@@ -281,11 +334,18 @@ export default function TasksApp({ appId, token }) {
             <div className="tk-empty-mark" aria-hidden="true">{CAL}</div>
             <div className="tk-empty-title">No scheduled tasks</div>
             <p className="tk-empty-text">When your agent schedules a check-in or reminder, it shows up here. Ask it to remind you about something.</p>
-            <button className="tk-btn tk-btn-primary" onClick={() => askAgent('Schedule a new check-in for me: remind me to ')}>Schedule one</button>
+            <button className="tk-btn tk-btn-primary" onClick={() => askAgent('Schedule a new check-in for me: remind me to ', 'new')}>Schedule one</button>
           </div>
         )}
 
-        {!loading && !error && sorted.length > 0 && (
+        {!loading && error && sorted.length > 0 && (
+          <div className="tk-sync-pill" role="status">
+            <span aria-hidden="true">{ALERT}</span>
+            <span><strong>{error.offline ? 'Offline' : 'Refresh failed'}</strong> {error.message}</span>
+          </div>
+        )}
+
+        {!loading && sorted.length > 0 && (
           <>
             <div className={`tk-summary${attentionCount > 0 ? ' is-alert' : ''}`}>
               <span className="tk-summary-ico" aria-hidden="true">{attentionCount > 0 ? ALERT : CLOCK}</span>
