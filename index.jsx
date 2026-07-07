@@ -161,6 +161,10 @@ function fmtRel(unixSec) {
   try { return formatDistanceToNow(new Date(normalized * 1000), { addSuffix: true }) } catch { return '' }
 }
 
+function emitSignal(name, payload) {
+  window.mobius?.signal?.(name, payload)
+}
+
 export default function TasksApp({ appId, token }) {
   const [tasks, setTasks] = useState(null) // null = loading
   const [error, setError] = useState(null)
@@ -184,7 +188,7 @@ export default function TasksApp({ appId, token }) {
       fetchImpl: fetch,
       authHeaders,
       previousTasks: tasksRef.current,
-      signal: window.mobius?.signal?.bind(window.mobius),
+      signal: emitSignal,
       online: getOnline(),
     })
     tasksRef.current = result.tasks
@@ -218,10 +222,10 @@ export default function TasksApp({ appId, token }) {
 
   function askAgent(draft, action) {
     try {
-      window.mobius?.signal?.('agent_handoff', { action })
+      emitSignal('agent_handoff', { action })
       window.parent.postMessage({ type: 'moebius:new-chat', draft }, window.location.origin)
     } catch (err) {
-      window.mobius?.signal?.('error', { message: String(err?.message || err), source: 'handoff' })
+      emitSignal('error', { message: String(err?.message || err), source: 'handoff' })
     }
   }
 
@@ -236,11 +240,11 @@ export default function TasksApp({ appId, token }) {
         if (navRef.current !== handle) return
       } catch (err) {
         if (navRef.current === handle) navRef.current = null
-        window.mobius?.signal?.('error', { message: String(err?.message || err), source: 'nav' })
+        emitSignal('error', { message: String(err?.message || err), source: 'nav' })
         return
       }
     }
-    window.mobius?.signal?.('item_opened', { type: 'task', status: task?._s?.key || task?.status || 'unknown' })
+    emitSignal('item_opened', { type: 'task', status: task?._s?.key || task?.status || 'unknown' })
     setSelected(id)
   }
   function closeTask() { try { navRef.current?.close?.() } catch {}; navRef.current = null; setSelected(null) }
