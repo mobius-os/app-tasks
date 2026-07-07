@@ -131,6 +131,7 @@ function installGlobals() {
   const mobius = {
     signal: noop,
     online: true,
+    onOnlineChange: (cb) => { cb(true); return noop },
     nav: { open: () => ({ ready: Promise.resolve(), close: noop }), close: noop },
     chat: { open: noop, close: noop },
   }

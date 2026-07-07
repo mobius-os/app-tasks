@@ -20,7 +20,8 @@ const CSS = `
 
 /* mobius-ui:Header v1 — keep in sync; library candidate. */
 .tk-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-height: 48px;
-  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  padding: max(12px, var(--mobius-safe-top, env(safe-area-inset-top))) 16px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--border); }
 .tk-brand { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
 .tk-mark { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; display: flex;
   align-items: center; justify-content: center;
@@ -114,7 +115,8 @@ const CSS = `
 
 /* detail */
 .tk-detail-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
-  padding: 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  padding: max(12px, var(--mobius-safe-top, env(safe-area-inset-top))) 12px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--border); }
 .tk-back { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 8px 12px 8px 8px;
   border-radius: 10px; border: none; background: none; color: var(--accent); font-family: var(--font);
   font-size: 15px; font-weight: 600; cursor: pointer; }
@@ -219,12 +221,22 @@ export default function TasksApp({ appId, token }) {
     const onVisibility = () => { if (document.visibilityState === 'visible') refetchIfVisible() }
     const onFocus = () => refetchIfVisible()
     window.addEventListener('focus', onFocus)
-    window.addEventListener('online', onFocus)
+    let unsubscribeOnline = null
+    if (window.mobius && typeof window.mobius.onOnlineChange === 'function') {
+      let sawInitialOnline = false
+      unsubscribeOnline = window.mobius.onOnlineChange((online) => {
+        if (!sawInitialOnline) { sawInitialOnline = true; return }
+        if (online) refetchIfVisible()
+      })
+    } else {
+      window.addEventListener('online', onFocus)
+    }
     document.addEventListener('visibilitychange', onVisibility)
     const t = setInterval(refetchIfVisible, 60000)
     return () => {
       window.removeEventListener('focus', onFocus)
-      window.removeEventListener('online', onFocus)
+      if (unsubscribeOnline) unsubscribeOnline()
+      else window.removeEventListener('online', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
       clearInterval(t)
     }

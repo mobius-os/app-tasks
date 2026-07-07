@@ -1,7 +1,7 @@
 {
   "id": "tasks",
   "name": "Tasks",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "See your agent's scheduled check-ins at a glance \u2014 status, due times, and what needs attention. Reschedule or cancel through the agent.",
   "author": "mobius-os",
   "license": "MIT",
