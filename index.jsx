@@ -168,6 +168,11 @@ function emitSignal(name, payload) {
 export default function TasksApp({ appId, token }) {
   const [tasks, setTasks] = useState(null) // null = loading
   const [error, setError] = useState(null)
+  // True when the visible tasks came from an earlier successful load and the
+  // LAST refresh merely failed to revalidate them. Distinguishes "no tasks,
+  // load failed" (full error page) from "genuinely zero tasks, refresh failed"
+  // (normal empty state + compact pill) — length alone can't tell those apart.
+  const [retained, setRetained] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const [selected, setSelected] = useState(null) // task id
@@ -182,7 +187,12 @@ export default function TasksApp({ appId, token }) {
     return true
   }, [])
 
+  // Five triggers can call load() concurrently (mount, 60s interval, focus,
+  // online, manual refresh); without a generation guard a slow older response
+  // could land after a newer one and paint stale data. Newest wins.
+  const loadGenRef = useRef(0)
   const load = useCallback(async () => {
+    const gen = ++loadGenRef.current
     setError(null)
     const result = await readTasks({
       fetchImpl: fetch,
@@ -191,9 +201,11 @@ export default function TasksApp({ appId, token }) {
       signal: emitSignal,
       online: getOnline(),
     })
+    if (gen !== loadGenRef.current) return
     tasksRef.current = result.tasks
     setTasks(result.tasks)
     setError(result.error)
+    setRetained(result.retained)
     setNow(Date.now())
   }, [authHeaders, getOnline])
 
@@ -324,7 +336,7 @@ export default function TasksApp({ appId, token }) {
       <div className="tk-scroll">
         {loading && <div className="tk-empty"><div className="tk-spinner" /><div className="tk-empty-title">Loading tasks…</div></div>}
 
-        {!loading && error && sorted.length === 0 && (
+        {!loading && error && sorted.length === 0 && !retained && (
           <div className="tk-empty">
             <div className="tk-empty-mark" aria-hidden="true">{ALERT}</div>
             <div className="tk-empty-title">{error.title}</div>
@@ -333,7 +345,7 @@ export default function TasksApp({ appId, token }) {
           </div>
         )}
 
-        {!loading && !error && sorted.length === 0 && (
+        {!loading && (!error || retained) && sorted.length === 0 && (
           <div className="tk-empty">
             <div className="tk-empty-mark" aria-hidden="true">{CAL}</div>
             <div className="tk-empty-title">No scheduled tasks</div>
@@ -342,7 +354,7 @@ export default function TasksApp({ appId, token }) {
           </div>
         )}
 
-        {!loading && error && sorted.length > 0 && (
+        {!loading && error && (sorted.length > 0 || retained) && (
           <div className="tk-sync-pill" role="status">
             <span aria-hidden="true">{ALERT}</span>
             <span><strong>{error.offline ? 'Offline' : 'Refresh failed'}</strong> {error.message}</span>
