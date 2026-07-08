@@ -7,6 +7,9 @@
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-tasks",
   "entry": "index.jsx",
+  "source_files": [
+    "domain.js"
+  ],
   "icon": "icon.png",
   "offline_capable": false,
   "permissions": {
