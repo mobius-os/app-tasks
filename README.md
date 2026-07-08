@@ -1,6 +1,6 @@
 # app-tasks - Tasks
 
-Tasks is a read-only Möbius catalog mini-app for the agent's scheduled check-ins. It reads the shared self-reminder log, folds it into the latest task state, and routes all creates, completions, cancellations, and reschedules back to the agent through a new chat.
+Tasks is a read-only Möbius catalog mini-app for the agent's scheduled check-ins and installed apps' recurring cron jobs. It reads the shared self-reminder log, folds it into the latest task state, and routes completions, cancellations, reschedules, and discussion back to the agent through a new chat.
 
 ## Data Contract
 
@@ -8,6 +8,7 @@ The app reads:
 
 ```text
 /data/shared/self-reminders.jsonl
+GET /api/apps/schedules
 ```
 
 Each non-empty line is a JSON object. Malformed lines are ignored so one bad append does not hide the rest of the task list.
@@ -38,13 +39,14 @@ Derived status:
 
 ## Write Model
 
-Tasks does not write `shared/self-reminders.jsonl`. Shared scheduling belongs to the Möbius agent, so every write-like action emits an `agent_handoff` signal and opens a chat draft:
+Tasks does not write `shared/self-reminders.jsonl` or app cron schedules. Shared scheduling belongs to the Möbius agent, so task update actions emit an `agent_handoff` signal and open a chat draft:
 
-- `new`
 - `reschedule`
 - `done`
 - `cancel`
 - `discuss`
+
+App cron rows from `/api/apps/schedules` are displayed read-only and have no reschedule, cancel, or discuss affordance in this app.
 
 The app refreshes shared storage on mount, manual refresh, focus/visibility return, online return, and a visible 60 second interval. If refresh fails after data was already loaded, the last visible task list stays on screen with an inline Offline or refresh-failed pill.
 

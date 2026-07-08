@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { formatDistanceToNow, format } from 'date-fns'
-import { readTasks, sortTasks, normalizeUnixSeconds } from './domain.js'
+import { readSchedules, readTasks, sortTasks, normalizeUnixSeconds } from './domain.js'
 
 // Tasks — a viewer for the agent's scheduled check-ins (its "self-reminders":
 // the relational follow-ups the Möbius agent schedules for itself, stored append-
 // only at /data/shared/self-reminders.jsonl as JSONL records shaped like
 // {id,note,status,due_at,created_at}. due_at and created_at are Unix seconds;
 // last record per id wins. A mini-app can READ shared storage but not WRITE it,
-// and scheduling is owner-only, so creating / rescheduling / cancelling a task
-// is routed to the agent via a new chat.
+// and scheduling is owner-only, so rescheduling / cancelling a task is routed
+// to the agent via a new chat. The app also reads platform app cron metadata
+// to show scheduled app jobs; those rows are read-only here.
 
 const CSS = `
 /* mobius-ui:Root v1 — keep in sync; library candidate. */
@@ -26,7 +27,7 @@ const CSS = `
 .tk-mark { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; display: flex;
   align-items: center; justify-content: center;
   background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
-.tk-mark svg { width: 18px; height: 18px; }
+.tk-mark img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
 .tk-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.015em; }
 .tk-subtitle { display: block; margin-top: 1px; font-size: 12px; color: var(--muted); }
 .tk-actions { display: flex; gap: 8px; }
@@ -66,6 +67,8 @@ const CSS = `
   border: 1px solid var(--border); border-radius: 12px; padding: 15px 16px; color: var(--text);
   font-family: var(--font); cursor: pointer; transition: transform .1s ease, border-color .14s ease; }
 .tk-card:active { transform: scale(0.99); }
+.tk-card.is-readonly { cursor: default; }
+.tk-card.is-readonly:active { transform: none; }
 .tk-card.is-done { opacity: 0.62; }
 .tk-card-top { display: flex; align-items: flex-start; gap: 10px; }
 .tk-note { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; line-height: 1.4; letter-spacing: -0.01em;
@@ -149,7 +152,6 @@ const CLOCK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeW
 const CAL = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
 const ALERT = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
 const REFRESH = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-const PLUS = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5v14"/></svg>
 const BACK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
 
 function fmtAbs(unixSec) {
@@ -163,13 +165,41 @@ function fmtRel(unixSec) {
   try { return formatDistanceToNow(new Date(normalized * 1000), { addSuffix: true }) } catch { return '' }
 }
 
+function fmtHour(minute, hour) {
+  const h = Number(hour)
+  const m = Number(minute)
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return null
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  const displayHour = h % 12 || 12
+  return `${displayHour}:${String(m).padStart(2, '0')} ${suffix}`
+}
+
+function describeCron(expr) {
+  const s = String(expr || '').trim()
+  const parts = s.split(/\s+/)
+  if (/^\*\/\d+$/.test(parts[0]) && parts.slice(1).join(' ') === '* * * *') {
+    return `Every ${parts[0].slice(2)} minutes`
+  }
+  if (parts.length === 5) {
+    const time = fmtHour(parts[0], parts[1])
+    if (time && parts[2] === '*' && parts[3] === '*') {
+      if (parts[4] === '*') return `Daily at ${time}`
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      if (/^[0-6]$/.test(parts[4])) return `${days[Number(parts[4])]}s at ${time}`
+    }
+  }
+  return s || 'Cron schedule'
+}
+
 function emitSignal(name, payload) {
   window.mobius?.signal?.(name, payload)
 }
 
 export default function TasksApp({ appId, token }) {
   const [tasks, setTasks] = useState(null) // null = loading
+  const [schedules, setSchedules] = useState(null)
   const [error, setError] = useState(null)
+  const [scheduleError, setScheduleError] = useState(null)
   // True when the visible tasks came from an earlier successful load and the
   // LAST refresh merely failed to revalidate them. Distinguishes "no tasks,
   // load failed" (full error page) from "genuinely zero tasks, refresh failed"
@@ -180,6 +210,7 @@ export default function TasksApp({ appId, token }) {
   const [selected, setSelected] = useState(null) // task id
   const navRef = useRef(null)
   const tasksRef = useRef(null)
+  const schedulesRef = useRef(null)
 
   const authHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
 
@@ -196,17 +227,28 @@ export default function TasksApp({ appId, token }) {
   const load = useCallback(async () => {
     const gen = ++loadGenRef.current
     setError(null)
-    const result = await readTasks({
-      fetchImpl: fetch,
-      authHeaders,
-      previousTasks: tasksRef.current,
-      signal: emitSignal,
-      online: getOnline(),
-    })
+    const [result, scheduleResult] = await Promise.all([
+      readTasks({
+        fetchImpl: fetch,
+        authHeaders,
+        previousTasks: tasksRef.current,
+        signal: emitSignal,
+        online: getOnline(),
+      }),
+      readSchedules({
+        fetchImpl: fetch,
+        authHeaders,
+        previousSchedules: schedulesRef.current,
+        signal: emitSignal,
+      }),
+    ])
     if (gen !== loadGenRef.current) return
     tasksRef.current = result.tasks
+    schedulesRef.current = scheduleResult.schedules
     setTasks(result.tasks)
+    setSchedules(scheduleResult.schedules)
     setError(result.error)
+    setScheduleError(scheduleResult.error)
     setRetained(result.retained)
     setNow(Date.now())
   }, [authHeaders, getOnline])
@@ -277,6 +319,7 @@ export default function TasksApp({ appId, token }) {
     if (!tasks) return []
     return sortTasks(tasks, now)
   }, [tasks, now])
+  const scheduledApps = schedules || []
 
   const attentionCount = useMemo(() => sorted.filter((t) => t._s.key === 'attention').length, [sorted])
   const upcomingCount = useMemo(() => sorted.filter((t) => t._s.key === 'scheduled').length, [sorted])
@@ -333,14 +376,15 @@ export default function TasksApp({ appId, token }) {
       <style>{CSS}</style>
       <header className="tk-header">
         <div className="tk-brand">
-          <span className="tk-mark" aria-hidden="true">{CLOCK}</span>
+          <span className="tk-mark">
+            {appId ? <img src={`/api/apps/${appId}/icon?size=64`} alt="" /> : null}
+          </span>
           <div>
             <h1 className="tk-title">Tasks</h1>
             <span className="tk-subtitle">Your agent’s scheduled check-ins</span>
           </div>
         </div>
         <div className="tk-actions">
-          <button className="tk-iconbtn" onClick={() => askAgent('Schedule a new check-in for me: remind me to ', 'new')} aria-label="Schedule a new task">{PLUS}</button>
           <button className={`tk-iconbtn${refreshing ? ' is-spinning' : ''}`} onClick={refresh} disabled={refreshing} aria-label="Refresh tasks">{REFRESH}</button>
         </div>
       </header>
@@ -348,7 +392,7 @@ export default function TasksApp({ appId, token }) {
       <div className="tk-scroll">
         {loading && <div className="tk-empty"><div className="tk-spinner" /><div className="tk-empty-title">Loading tasks…</div></div>}
 
-        {!loading && error && sorted.length === 0 && !retained && (
+        {!loading && error && sorted.length === 0 && scheduledApps.length === 0 && !retained && (
           <div className="tk-empty">
             <div className="tk-empty-mark" aria-hidden="true">{ALERT}</div>
             <div className="tk-empty-title">{error.title}</div>
@@ -357,19 +401,18 @@ export default function TasksApp({ appId, token }) {
           </div>
         )}
 
-        {!loading && (!error || retained) && sorted.length === 0 && (
+        {!loading && (!error || retained) && sorted.length === 0 && scheduledApps.length === 0 && (
           <div className="tk-empty">
             <div className="tk-empty-mark" aria-hidden="true">{CAL}</div>
             <div className="tk-empty-title">No scheduled tasks</div>
-            <p className="tk-empty-text">When your agent schedules a check-in or reminder, it shows up here. Ask it to remind you about something.</p>
-            <button className="tk-btn tk-btn-primary" onClick={() => askAgent('Schedule a new check-in for me: remind me to ', 'new')}>Schedule one</button>
+            <p className="tk-empty-text">When your agent schedules a check-in or app job, it shows up here.</p>
           </div>
         )}
 
-        {!loading && error && (sorted.length > 0 || retained) && (
+        {!loading && (error || scheduleError) && (sorted.length > 0 || scheduledApps.length > 0 || retained) && (
           <div className="tk-sync-pill" role="status">
             <span aria-hidden="true">{ALERT}</span>
-            <span><strong>{error.offline ? 'Offline' : 'Refresh failed'}</strong> {error.message}</span>
+            <span><strong>{(error || scheduleError).offline ? 'Offline' : 'Refresh failed'}</strong> {(error || scheduleError).message}</span>
           </div>
         )}
 
@@ -380,7 +423,7 @@ export default function TasksApp({ appId, token }) {
               <span className="tk-summary-label">{attentionCount > 0 ? 'Needs attention' : 'Upcoming'}</span>
               <span className="tk-summary-count">{attentionCount > 0 ? attentionCount : upcomingCount}</span>
             </div>
-            <div className="tk-section-title">Scheduled</div>
+            <div className="tk-section-title">Self-reminders</div>
             <div className="tk-list">
               {sorted.map((t) => {
                 const s = t._s
@@ -399,6 +442,28 @@ export default function TasksApp({ appId, token }) {
                   </button>
                 )
               })}
+            </div>
+          </>
+        )}
+
+        {!loading && scheduledApps.length > 0 && (
+          <>
+            <div className="tk-section-title">Scheduled apps</div>
+            <div className="tk-list">
+              {scheduledApps.map((job) => (
+                <div key={job.id} className="tk-card is-readonly">
+                  <div className="tk-card-top">
+                    <div className="tk-note">{job.name || 'Untitled app'}</div>
+                    <span className="tk-badge tone-muted">{job.slug || `app ${job.id}`}</span>
+                  </div>
+                  <div className="tk-meta">
+                    <div className="tk-meta-k">Schedule</div>
+                    <div className="tk-meta-v">{describeCron(job.cron)}</div>
+                    <div className="tk-meta-k">Job</div>
+                    <div className="tk-meta-v">{job.job || 'job.sh'}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </>
         )}

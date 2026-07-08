@@ -1,4 +1,5 @@
 export const REMINDERS_PATH = '/api/storage/shared/self-reminders.jsonl'
+export const APP_SCHEDULES_PATH = '/api/apps/schedules'
 
 const MILLISECOND_UNIX_THRESHOLD = 100_000_000_000
 
@@ -86,6 +87,16 @@ export function friendlyLoadError(err, online = true) {
   }
 }
 
+export function friendlyScheduleLoadError(err) {
+  const raw = String(err?.message || err || 'Could not load schedules')
+  return {
+    title: "Couldn't load schedules",
+    message: 'Scheduled app jobs could not be refreshed. Try again in a moment.',
+    raw,
+    offline: /failed to fetch|networkerror|network request failed/i.test(raw),
+  }
+}
+
 export async function readTasks({ fetchImpl, authHeaders, previousTasks, signal, online }) {
   try {
     const res = await fetchImpl(REMINDERS_PATH, { headers: authHeaders })
@@ -106,6 +117,48 @@ export async function readTasks({ fetchImpl, authHeaders, previousTasks, signal,
       tasks: fallback,
       error: friendlyLoadError(err, online),
       retained: Array.isArray(previousTasks),
+    }
+  }
+}
+
+function normalizeSchedule(record) {
+  if (!record || record.id == null) return null
+  const cron = typeof record.cron === 'string' ? record.cron.trim() : ''
+  if (!cron) return null
+  return {
+    id: record.id,
+    name: record.name || 'Untitled app',
+    slug: record.slug || '',
+    cron,
+    job: record.job || 'job.sh',
+    next_run: record.next_run || null,
+  }
+}
+
+export function sortSchedules(schedules) {
+  return (schedules || [])
+    .map(normalizeSchedule)
+    .filter(Boolean)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)) || Number(a.id) - Number(b.id))
+}
+
+export async function readSchedules({ fetchImpl, authHeaders, previousSchedules, signal }) {
+  try {
+    const res = await fetchImpl(APP_SCHEDULES_PATH, { headers: authHeaders })
+    if (!res.ok) throw new Error(`load schedules ${res.status}`)
+    const raw = await res.json()
+    return {
+      schedules: sortSchedules(Array.isArray(raw) ? raw : []),
+      error: null,
+      retained: false,
+    }
+  } catch (err) {
+    signal?.('error', { message: String(err?.message || err), source: 'schedule_load' })
+    const fallback = Array.isArray(previousSchedules) ? previousSchedules : []
+    return {
+      schedules: fallback,
+      error: friendlyScheduleLoadError(err),
+      retained: Array.isArray(previousSchedules),
     }
   }
 }

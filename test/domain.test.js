@@ -2,11 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  APP_SCHEDULES_PATH,
   REMINDERS_PATH,
   foldReminders,
   friendlyLoadError,
+  friendlyScheduleLoadError,
   normalizeUnixSeconds,
+  readSchedules,
   readTasks,
+  sortSchedules,
   sortTasks,
   summarizeTasks,
 } from '../domain.js'
@@ -119,12 +123,68 @@ test('readTasks uses the full friendly Offline state on first-load network failu
   assert.equal(result.error.offline, true)
 })
 
+test('readSchedules reads platform cron metadata with the app token', async () => {
+  const calls = []
+  const result = await readSchedules({
+    fetchImpl: async (path, opts) => {
+      calls.push([path, opts.headers.Authorization])
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          { id: 2, name: 'Reflection', slug: 'reflection', cron: '0 6 * * *', job: 'fetch.sh' },
+          { id: 1, name: 'News', slug: 'news', cron: '0 10 * * *', job: 'fetch.sh' },
+        ],
+      }
+    },
+    authHeaders: { Authorization: 'Bearer app-token' },
+    previousSchedules: null,
+    signal: () => {},
+  })
+
+  assert.deepEqual(calls, [[APP_SCHEDULES_PATH, 'Bearer app-token']])
+  assert.equal(result.error, null)
+  assert.deepEqual(result.schedules.map((s) => s.name), ['News', 'Reflection'])
+})
+
+test('readSchedules preserves previous schedules on refresh failure', async () => {
+  const previousSchedules = [{ id: 1, name: 'News', cron: '0 10 * * *', job: 'fetch.sh' }]
+  const calls = []
+
+  const result = await readSchedules({
+    fetchImpl: async () => ({ ok: false, status: 500 }),
+    authHeaders: {},
+    previousSchedules,
+    signal: (name, payload) => calls.push([name, payload]),
+  })
+
+  assert.equal(result.retained, true)
+  assert.equal(result.schedules, previousSchedules)
+  assert.equal(result.error.title, "Couldn't load schedules")
+  assert.deepEqual(calls, [['error', { message: 'load schedules 500', source: 'schedule_load' }]])
+})
+
+test('sortSchedules drops unusable rows', () => {
+  assert.deepEqual(sortSchedules([
+    { id: 2, name: 'Reflection', cron: '0 6 * * *', job: 'fetch.sh' },
+    { id: 3, name: 'Broken', job: 'fetch.sh' },
+    { id: 1, name: 'News', cron: '0 10 * * *', job: 'fetch.sh' },
+  ]).map((s) => s.name), ['News', 'Reflection'])
+})
+
 test('friendlyLoadError maps HTTP failures without leaking raw status copy', () => {
   const error = friendlyLoadError(new Error('load 500'), true)
 
   assert.equal(error.title, "Couldn't load tasks")
   assert.equal(error.raw, 'load 500')
   assert.doesNotMatch(error.message, /load 500/)
+})
+
+test('friendlyScheduleLoadError labels schedule refresh failures separately', () => {
+  const error = friendlyScheduleLoadError(new Error('load schedules 500'))
+
+  assert.equal(error.title, "Couldn't load schedules")
+  assert.match(error.message, /Scheduled app jobs/)
 })
 
 test('summarizeTasks reports flat primitive counts', () => {
