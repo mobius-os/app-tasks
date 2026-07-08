@@ -24,10 +24,12 @@ const CSS = `
   padding: max(12px, var(--mobius-safe-top, env(safe-area-inset-top))) 16px 12px;
   background: var(--surface); border-bottom: 1px solid var(--border); }
 .tk-brand { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
-.tk-mark { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; display: flex;
-  align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.tk-mark { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 8px; display: flex;
+  align-items: center; justify-content: center; overflow: hidden; color: var(--accent); }
 .tk-mark img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
+.tk-mark-fallback { width: 34px; height: 34px; border-radius: 8px; display: none;
+  align-items: center; justify-content: center; font-size: 32px; font-weight: 700; line-height: 1;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .tk-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.015em; }
 .tk-subtitle { display: block; margin-top: 1px; font-size: 12px; color: var(--muted); }
 .tk-actions { display: flex; gap: 8px; }
@@ -377,7 +379,20 @@ export default function TasksApp({ appId, token }) {
       <header className="tk-header">
         <div className="tk-brand">
           <span className="tk-mark">
-            {appId ? <img src={`/api/apps/${appId}/icon?size=64`} alt="" /> : null}
+            {appId ? (
+              <img
+                src={`/api/apps/${appId}/icon?size=64`}
+                alt=""
+                width={34}
+                height={34}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                  const f = e.currentTarget.nextElementSibling
+                  if (f) f.style.display = 'flex'
+                }}
+              />
+            ) : null}
+            <span className="tk-mark-fallback" aria-hidden="true">·</span>
           </span>
           <div>
             <h1 className="tk-title">Tasks</h1>
