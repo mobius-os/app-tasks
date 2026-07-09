@@ -14,10 +14,23 @@ import { readSchedules, readTasks, sortTasks, normalizeUnixSeconds } from './dom
 const CSS = `
 /* mobius-ui:Root v1 — keep in sync; library candidate. */
 .tk-root { position: relative; display: flex; flex-direction: column; height: 100%;
-  overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font);
+  width: 100%; max-width: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font);
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
   --tk-amber: #d99a2b; }
-.tk-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 32px; }
+.tk-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 0 32px; }
 /* /mobius-ui:Root */
+
+/* mobius-ui:Scrollskin v2 — keep in sync; hidden by default, content stays scrollable. */
+.tk-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tk-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+/* /mobius-ui:Scrollskin */
 
 /* mobius-ui:Header v1 — keep in sync; library candidate. */
 .tk-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-height: 48px;
@@ -30,7 +43,7 @@ const CSS = `
 .tk-mark-fallback { width: 34px; height: 34px; border-radius: 8px; display: none;
   align-items: center; justify-content: center; font-size: 32px; font-weight: 700; line-height: 1;
   background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.tk-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.015em; }
+.tk-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0; }
 .tk-subtitle { display: block; margin-top: 1px; font-size: 12px; color: var(--muted); }
 .tk-actions { display: flex; gap: 8px; }
 .tk-iconbtn { flex: 0 0 auto; width: 44px; height: 44px; display: inline-flex; align-items: center;
@@ -60,8 +73,8 @@ const CSS = `
 .tk-summary-count { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); }
 .tk-summary.is-alert .tk-summary-count { color: var(--tk-amber); }
 
-.tk-section-title { margin: 18px 16px 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--muted); }
+.tk-section-title { margin: 18px 16px 4px; font-size: 13px; font-weight: 700; letter-spacing: 0;
+  color: var(--muted); }
 
 /* mobius-ui:Card v1 — keep in sync; library candidate. Diverge below the marker only. */
 .tk-list { display: flex; flex-direction: column; gap: 10px; padding: 8px 16px 0; }
@@ -73,10 +86,10 @@ const CSS = `
 .tk-card.is-readonly:active { transform: none; }
 .tk-card.is-done { opacity: 0.62; }
 .tk-card-top { display: flex; align-items: flex-start; gap: 10px; }
-.tk-note { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; line-height: 1.4; letter-spacing: -0.01em;
+.tk-note { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; line-height: 1.4; letter-spacing: 0;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .tk-badge { flex: 0 0 auto; font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 20px;
-  white-space: nowrap; letter-spacing: 0.01em; }
+  white-space: nowrap; letter-spacing: 0; }
 .tk-badge.tone-active { color: var(--green); background: color-mix(in srgb, var(--green) 15%, transparent); }
 .tk-badge.tone-attention { color: var(--tk-amber); background: color-mix(in srgb, var(--tk-amber) 16%, transparent); }
 .tk-badge.tone-done { color: var(--green); background: color-mix(in srgb, var(--green) 13%, transparent); }
