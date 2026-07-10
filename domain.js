@@ -100,15 +100,14 @@ export function friendlyScheduleLoadError(err) {
 export async function readTasks({ fetchImpl, authHeaders, previousTasks, signal, online }) {
   try {
     const res = await fetchImpl(REMINDERS_PATH, { headers: authHeaders })
+    // app_ready is emitted by the component once BOTH reads resolve, so it can
+    // carry schedule_count alongside the task counts.
     if (res.status === 404) {
-      const tasks = []
-      signal?.('app_ready', summarizeTasks(tasks, Date.now()))
-      return { tasks, error: null, retained: false }
+      return { tasks: [], error: null, retained: false }
     }
     if (!res.ok) throw new Error(`load ${res.status}`)
     const text = await res.text()
     const tasks = foldReminders(text)
-    signal?.('app_ready', summarizeTasks(tasks, Date.now()))
     return { tasks, error: null, retained: false }
   } catch (err) {
     signal?.('error', { message: String(err?.message || err), source: 'load' })

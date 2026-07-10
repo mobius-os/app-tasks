@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { formatDistanceToNow, format } from 'date-fns'
-import { readSchedules, readTasks, sortTasks, normalizeUnixSeconds } from './domain.js'
+import { readSchedules, readTasks, sortTasks, normalizeUnixSeconds, summarizeTasks } from './domain.js'
 
 // Tasks — a viewer for the agent's scheduled check-ins (its "self-reminders":
 // the relational follow-ups the Möbius agent schedules for itself, stored append-
@@ -220,6 +220,9 @@ export default function TasksApp({ appId, token }) {
   // load failed" (full error page) from "genuinely zero tasks, refresh failed"
   // (normal empty state + compact pill) — length alone can't tell those apart.
   const [retained, setRetained] = useState(false)
+  // Schedules load independently of tasks; track its retained flag too so an
+  // errored schedules fetch is never mistaken for "nothing scheduled".
+  const [scheduleRetained, setScheduleRetained] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const [selected, setSelected] = useState(null) // task id
@@ -265,7 +268,19 @@ export default function TasksApp({ appId, token }) {
     setError(result.error)
     setScheduleError(scheduleResult.error)
     setRetained(result.retained)
+    setScheduleRetained(scheduleResult.retained)
     setNow(Date.now())
+
+    // Both reads resolved for the winning load — emit launch analytics once.
+    emitSignal('app_ready', {
+      ...summarizeTasks(result.tasks, Date.now()),
+      schedule_count: scheduleResult.schedules.length,
+    })
+    const hasContent = result.tasks.length > 0 || scheduleResult.schedules.length > 0
+    const loadError = result.error || scheduleResult.error
+    const loadRetained = result.retained || scheduleResult.retained
+    const state = hasContent ? 'populated' : (loadError && !loadRetained) ? 'load_failed' : 'empty'
+    emitSignal('list_state', { state })
   }, [authHeaders, getOnline])
 
   useEffect(() => { load() }, [load])
@@ -299,7 +314,7 @@ export default function TasksApp({ appId, token }) {
     }
   }, [load])
 
-  async function refresh() { setRefreshing(true); await load(); setRefreshing(false) }
+  async function refresh() { emitSignal('refresh_tapped'); setRefreshing(true); await load(); setRefreshing(false) }
 
   function askAgent(draft, action) {
     try {
@@ -386,6 +401,13 @@ export default function TasksApp({ appId, token }) {
 
   // ---- List view ----
   const loading = tasks === null
+  // Tasks and schedules load independently; the empty/error/pill gates must
+  // consider BOTH so a failed schedules fetch is never shown as "nothing
+  // scheduled". anyError surfaces whichever source failed; anyRetained means at
+  // least one source is still showing prior data.
+  const anyError = error || scheduleError
+  const anyRetained = retained || scheduleRetained
+  const hasContent = sorted.length > 0 || scheduledApps.length > 0
   return (
     <div className="tk-root">
       <style>{CSS}</style>
@@ -420,16 +442,16 @@ export default function TasksApp({ appId, token }) {
       <div className="tk-scroll">
         {loading && <div className="tk-empty"><div className="tk-spinner" /><div className="tk-empty-title">Loading tasks…</div></div>}
 
-        {!loading && error && sorted.length === 0 && scheduledApps.length === 0 && !retained && (
+        {!loading && anyError && !hasContent && !anyRetained && (
           <div className="tk-empty">
             <div className="tk-empty-mark" aria-hidden="true">{ALERT}</div>
-            <div className="tk-empty-title">{error.title}</div>
-            <p className="tk-empty-text">{error.message}</p>
+            <div className="tk-empty-title">{anyError.title}</div>
+            <p className="tk-empty-text">{anyError.message}</p>
             <button className="tk-btn" onClick={refresh}>Try again</button>
           </div>
         )}
 
-        {!loading && (!error || retained) && sorted.length === 0 && scheduledApps.length === 0 && (
+        {!loading && (!anyError || anyRetained) && !hasContent && (
           <div className="tk-empty">
             <div className="tk-empty-mark" aria-hidden="true">{CAL}</div>
             <div className="tk-empty-title">No scheduled tasks</div>
@@ -437,10 +459,10 @@ export default function TasksApp({ appId, token }) {
           </div>
         )}
 
-        {!loading && (error || scheduleError) && (sorted.length > 0 || scheduledApps.length > 0 || retained) && (
+        {!loading && anyError && (hasContent || anyRetained) && (
           <div className="tk-sync-pill" role="status">
             <span aria-hidden="true">{ALERT}</span>
-            <span><strong>{(error || scheduleError).offline ? 'Offline' : 'Refresh failed'}</strong> {(error || scheduleError).message}</span>
+            <span><strong>{anyError.offline ? 'Offline' : 'Refresh failed'}</strong> {anyError.message}</span>
           </div>
         )}
 
