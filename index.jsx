@@ -20,6 +20,14 @@ const CSS = `
 .tk-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 0 32px; }
 /* /mobius-ui:Root */
 
+/* mobius-ui:Page — app-owned; a future-library candidate (no sync owed).
+   Reading column: the scroll owns the full-bleed scrollbar; this caps the CONTENT.
+   Full-bleed on phones, centered at 640px (matches the .tk-detail-body cap) on wide
+   viewports so the list and detail agree and the key/value gulf closes. */
+.tk-page { width: 100%; }
+@media (min-width: 760px) { .tk-page { max-width: 640px; margin-inline: auto; } }
+/* /mobius-ui:Page */
+
 /* mobius-ui:Scrollskin v2 — keep in sync; hidden by default, content stays scrollable. */
 .tk-scroll {
   scrollbar-width: none;
@@ -440,6 +448,7 @@ export default function TasksApp({ appId, token }) {
       </header>
 
       <div className="tk-scroll">
+        <div className="tk-page">
         {loading && <div className="tk-empty"><div className="tk-spinner" /><div className="tk-empty-title">Loading tasks…</div></div>}
 
         {!loading && anyError && !hasContent && !anyRetained && (
@@ -517,6 +526,7 @@ export default function TasksApp({ appId, token }) {
             </div>
           </>
         )}
+        </div>
       </div>
     </div>
   )
