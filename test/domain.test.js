@@ -58,7 +58,7 @@ test('sortTasks preserves Needs Attention ranking before future and done tasks',
   ])
 })
 
-test('readTasks emits expanded app_ready counts on success', async () => {
+test('readTasks folds tasks on success and defers app_ready to the caller', async () => {
   const calls = []
   const fetchImpl = async (path) => {
     assert.equal(path, REMINDERS_PATH)
@@ -82,11 +82,9 @@ test('readTasks emits expanded app_ready counts on success', async () => {
 
   assert.equal(result.error, null)
   assert.equal(result.tasks.length, 2)
-  assert.equal(calls.length, 1)
-  assert.equal(calls[0][0], 'app_ready')
-  assert.deepEqual(Object.keys(calls[0][1]).sort(), ['attention_count', 'done_count', 'item_count'])
-  assert.equal(calls[0][1].item_count, 2)
-  assert.equal(calls[0][1].done_count, 1)
+  // app_ready now fires from the component once both reads resolve (so it can
+  // carry schedule_count); readTasks emits nothing on the success path.
+  assert.deepEqual(calls, [])
 })
 
 test('readTasks preserves previous tasks and emits a technical load error on failed revalidate', async () => {

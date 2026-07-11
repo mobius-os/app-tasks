@@ -54,9 +54,11 @@ The app refreshes shared storage on mount, manual refresh, focus/visibility retu
 
 The app emits guarded `window.mobius?.signal?.()` calls:
 
-- `app_ready { item_count, attention_count, done_count }`
+- `app_ready { item_count, attention_count, done_count, schedule_count }` — once both reads resolve for a load
+- `list_state { state }` — once per load; `state` is `populated`, `empty`, or `load_failed`
 - `item_opened { type: "task", status }`
 - `agent_handoff { action }`
+- `refresh_tapped` — the manual refresh / try-again button was pressed (not the auto refreshes)
 - `error { message, source }`
 
 Payloads are flat primitives and contain no task text.
