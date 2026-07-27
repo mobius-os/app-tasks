@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { formatDistanceToNow, format } from 'date-fns'
+import {
+  ArrowLeft,
+  ArrowRotateCw,
+  Calendar,
+  Clock,
+  TriangleExclamationErrorWarning,
+} from '@openai/apps-sdk-ui/components/Icon'
 import { readSchedules, readTasks, sortTasks, normalizeUnixSeconds, summarizeTasks } from './domain.js'
 
 // Tasks — a viewer for the agent's scheduled check-ins (its "self-reminders":
@@ -171,11 +178,11 @@ const CSS = `
 /* /mobius-ui:ReducedMotion */
 `
 
-const CLOCK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-const CAL = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
-const ALERT = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
-const REFRESH = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-const BACK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+const CLOCK = <Clock aria-hidden="true" />
+const CAL = <Calendar aria-hidden="true" />
+const ALERT = <TriangleExclamationErrorWarning aria-hidden="true" />
+const REFRESH = <ArrowRotateCw aria-hidden="true" />
+const BACK = <ArrowLeft aria-hidden="true" />
 
 function fmtAbs(unixSec) {
   const normalized = normalizeUnixSeconds(unixSec)

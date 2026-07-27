@@ -20,7 +20,8 @@
     "imports": [
       "react",
       "react-dom",
-      "date-fns"
+      "date-fns",
+      "@openai/apps-sdk-ui/components/Icon"
     ],
     "esm_deps": []
   },
