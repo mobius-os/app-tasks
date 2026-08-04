@@ -4,20 +4,20 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { createRequire } from 'node:module'
 
-// Render smoke: bundle index.jsx the way the platform compiler does, stub the
-// react runtime with minimally-functional hooks, and invoke the exported
+// Render smoke: bundle index.jsx the way the platform compiler does — Möbius
+// compiles mini-apps with Rolldown, so this bundles with Rolldown too — stub
+// the react runtime with minimally-functional hooks, and invoke the exported
 // App(). Catches the bug class unit tests of extracted helpers cannot see —
 // a TDZ reference, a missing import, any synchronous render-path throw (the
 // exact class that shipped broken in app-latex while its suite stayed green).
-// Skips (not fails) when esbuild is not resolvable, so bare `node --test` on
-// a fresh clone stays green; run `ESBUILD_BIN=<path> npm test` for full
-// coverage.
+// Needs the shell's frontend deps (rolldown, plus the packages index.jsx
+// bundles). CI provides them via MOBIUS_FRONTEND_NODE_MODULES; locally a
+// sibling mobius checkout works too. Skips (not fails) when neither is
+// available, so bare `node --test` on a fresh clone stays green.
 
 const CLONE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const execFileAsync = promisify(execFile)
 const root = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(root, '.build-render')
 const bundled = join(buildDir, 'app.mjs')
@@ -32,18 +32,45 @@ const RUNTIME_LIBS = [
 const REACT_SPEC = 'react'
 const JSX_SPECS = new Set(['react/jsx-runtime', 'react/jsx-dev-runtime'])
 
+function hasFrontendTestDeps(candidate) {
+  if (!candidate) return false
+  try {
+    createRequire(join(candidate, 'noop.js')).resolve('rolldown')
+    return true
+  } catch {
+    return false
+  }
+}
+
+function frontendNodeModules() {
+  const fromEnv = process.env.MOBIUS_FRONTEND_NODE_MODULES
+  if (hasFrontendTestDeps(fromEnv)) return fromEnv
+  for (const rel of ['.mobius/frontend/node_modules', '../mobius/frontend/node_modules']) {
+    const candidate = join(CLONE_ROOT, rel)
+    if (hasFrontendTestDeps(candidate)) return candidate
+  }
+  return null
+}
+
+const nm = frontendNodeModules()
+
 async function bundleAndImport() {
   await rm(buildDir, { recursive: true, force: true })
   await mkdir(buildDir, { recursive: true })
-  await execFileAsync(process.env.ESBUILD_BIN || 'esbuild', [
-    join(CLONE_ROOT, 'index.jsx'),
-    '--bundle',
-    '--format=esm',
-    '--platform=node',
-    '--jsx=automatic',
-    ...RUNTIME_LIBS.map((lib) => `--external:${lib}`),
-    `--outfile=${bundled}`,
-  ])
+  const requireFromFrontend = createRequire(join(nm, 'noop.js'))
+  const { rolldown } = await import(
+    pathToFileURL(requireFromFrontend.resolve('rolldown')).href
+  )
+  const build = await rolldown({
+    input: join(CLONE_ROOT, 'index.jsx'),
+    platform: 'node',
+    tsconfig: false,
+    transform: { jsx: 'react-jsx' },
+    external: RUNTIME_LIBS,
+    resolve: { modules: [nm, 'node_modules'] },
+  })
+  await build.write({ file: bundled, format: 'es' })
+  await build.close()
 
   const bundleSrc = readFileSync(bundled, 'utf8')
   const exportsBySpec = {}
@@ -158,18 +185,9 @@ function installGlobals() {
   globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' })
 }
 
-async function esbuildAvailable() {
-  try {
-    await execFileAsync(process.env.ESBUILD_BIN || 'esbuild', ['--version'])
-    return true
-  } catch {
-    return false
-  }
-}
-
 test('App() renders without throwing (render smoke)', async (t) => {
-  if (!(await esbuildAvailable())) {
-    t.skip('esbuild not resolvable — set ESBUILD_BIN or install esbuild')
+  if (!nm) {
+    t.skip('frontend bundle deps unavailable — set MOBIUS_FRONTEND_NODE_MODULES')
     return
   }
   installGlobals()
