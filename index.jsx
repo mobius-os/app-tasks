@@ -343,15 +343,18 @@ export default function TasksApp({ appId, token }) {
   async function openTask(id) {
     const task = sorted.find((t) => t.id === id)
     if (window.mobius?.nav?.open) {
-      let handle = null
-      try {
-        handle = window.mobius.nav.open('task-detail', () => { navRef.current = null; setSelected(null) })
-        navRef.current = handle
-        await handle.ready
-        if (navRef.current !== handle) return
-      } catch (err) {
-        if (navRef.current === handle) navRef.current = null
-        emitSignal('error', { message: String(err?.message || err), source: 'nav' })
+      const handle = window.mobius.nav.open('task-detail', {
+        onBack: () => { navRef.current = null; setSelected(null) },
+        onForward: () => { navRef.current = handle; setSelected(id) },
+      })
+      navRef.current = handle
+      const outcome = await handle.outcome
+      if (navRef.current !== handle) return
+      if (outcome.status !== 'owned' && outcome.status !== 'standalone') {
+        navRef.current = null
+        if (outcome.status === 'error') {
+          emitSignal('error', { message: outcome.error || 'Navigation failed', source: 'nav' })
+        }
         return
       }
     }
@@ -428,7 +431,7 @@ export default function TasksApp({ appId, token }) {
       <style>{CSS}</style>
       <header className="tk-header">
         <div className="tk-brand">
-          <span className="tk-mark">
+          <span className="tk-mark" ref={(el) => el && window.mobius.immersive && window.mobius.immersive.holdToToggle(el)}>
             {appId ? (
               <img
                 src={`/api/apps/${appId}/icon?size=64`}

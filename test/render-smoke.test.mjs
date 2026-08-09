@@ -159,7 +159,7 @@ function installGlobals() {
     signal: noop,
     online: true,
     onOnlineChange: (cb) => { cb(true); return noop },
-    nav: { open: () => ({ ready: Promise.resolve(), close: noop }), close: noop },
+    nav: { open: () => ({ outcome: Promise.resolve({ status: 'owned' }), close: noop }), close: noop },
     chat: { open: noop, close: noop },
   }
   try {
