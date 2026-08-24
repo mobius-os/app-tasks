@@ -50,7 +50,7 @@ const CSS = `
 /* mobius-ui:Header v1 — keep in sync; library candidate. */
 .tk-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-height: 48px;
   padding: 0;
-  background: var(--surface); border-bottom: 1px solid var(--border); }
+  background: var(--bg); }
 .tk-header-inner { width: 100%; max-width: 672px; margin-inline: auto; display: flex; align-items: center; gap: 12px;
   padding: max(12px, var(--mobius-safe-top, env(safe-area-inset-top))) 16px 12px; }
 .tk-brand { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
