@@ -50,7 +50,7 @@ const CSS = `
 /* mobius-ui:Header v1 — keep in sync; library candidate. */
 .tk-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-height: 48px;
   padding: 0;
-  background: var(--bg); }
+  background: var(--bg); border-bottom: 1px solid var(--border); }
 .tk-header-inner { width: 100%; max-width: 672px; margin-inline: auto; display: flex; align-items: center; gap: 12px;
   padding: max(12px, var(--mobius-safe-top, env(safe-area-inset-top))) 16px 12px; }
 .tk-brand { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
@@ -178,6 +178,21 @@ const CSS = `
   .tk-spinner { animation: none; }
 }
 /* /mobius-ui:ReducedMotion */
+
+/* mobius-ui:CenteredRail v1 */
+@media (min-width: 900px) {
+  .tk-root {
+    background:
+      linear-gradient(var(--bg), var(--bg)) center / min(100%, 672px) 100% no-repeat,
+      radial-gradient(ellipse 76% 112% at 50% 46%,
+        color-mix(in srgb, var(--accent) 18%, var(--bg)) 0%,
+        color-mix(in srgb, var(--accent) 7%, var(--bg)) 46%,
+        color-mix(in srgb, var(--text) 2%, var(--bg)) 100%);
+
+  }
+  .tk-header { width: min(100%, 672px); margin-inline: auto; }
+}
+/* /mobius-ui:CenteredRail */
 `
 
 const CLOCK = <Clock aria-hidden="true" />
@@ -434,7 +449,7 @@ export default function TasksApp({ appId, token }) {
       <header className="tk-header">
         <div className="tk-header-inner">
         <div className="tk-brand">
-          <span className="tk-mark" ref={(el) => el && window.mobius.immersive && window.mobius.immersive.holdToToggle(el)}>
+          <span className="tk-mark">
             {appId ? (
               <img
                 src={`/api/apps/${appId}/icon?size=64`}
