@@ -51,7 +51,7 @@ const CSS = `
 .tk-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-height: 48px;
   padding: 0;
   background: var(--bg); border-bottom: 1px solid var(--border); }
-.tk-header-inner { width: 100%; max-width: 672px; margin-inline: auto; display: flex; align-items: center; gap: 12px;
+.tk-header-inner { width: 100%; max-width: 760px; margin-inline: auto; display: flex; align-items: center; gap: 12px;
   padding: max(12px, var(--mobius-safe-top, env(safe-area-inset-top))) 16px 12px; }
 .tk-brand { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
 .tk-mark { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 8px; display: flex;
@@ -182,15 +182,9 @@ const CSS = `
 /* mobius-ui:CenteredRail v1 */
 @media (min-width: 900px) {
   .tk-root {
-    background:
-      linear-gradient(var(--bg), var(--bg)) center / min(100%, 672px) 100% no-repeat,
-      radial-gradient(ellipse 76% 112% at 50% 46%,
-        color-mix(in srgb, var(--accent) 18%, var(--bg)) 0%,
-        color-mix(in srgb, var(--accent) 7%, var(--bg)) 46%,
-        color-mix(in srgb, var(--text) 2%, var(--bg)) 100%);
 
   }
-  .tk-header { width: min(100%, 672px); margin-inline: auto; }
+  .tk-header { width: min(100%, 760px); margin-inline: auto; }
 }
 /* /mobius-ui:CenteredRail */
 `
