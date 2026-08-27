@@ -50,9 +50,10 @@ const CSS = `
 /* mobius-ui:Header v1 — keep in sync; library candidate. */
 .tk-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-height: 48px;
   padding: 0;
-  background: var(--bg); border-bottom: 1px solid var(--border); }
-.tk-header-inner { width: 100%; max-width: 760px; margin-inline: auto; display: flex; align-items: center; gap: 12px;
+  background: var(--bg); }
+.tk-header-inner { position: relative; width: 100%; max-width: 760px; margin-inline: auto; display: flex; align-items: center; gap: 12px;
   padding: max(12px, var(--mobius-safe-top, env(safe-area-inset-top))) 16px 12px; }
+.tk-header-inner::after { content: ''; position: absolute; inset-inline: 16px; bottom: 0; height: 1px; background: var(--border); }
 .tk-brand { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
 .tk-mark { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 8px; display: flex;
   align-items: center; justify-content: center; overflow: hidden; color: var(--accent); }
