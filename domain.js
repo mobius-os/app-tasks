@@ -141,6 +141,40 @@ export function sortSchedules(schedules) {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)) || Number(a.id) - Number(b.id))
 }
 
+function fmtHour(minute, hour) {
+  const h = Number(hour)
+  const m = Number(minute)
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return null
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  const displayHour = h % 12 || 12
+  return `${displayHour}:${String(m).padStart(2, '0')} ${suffix}`
+}
+
+// A short human label for the common cron shapes; anything else is shown raw.
+export function describeCron(expr) {
+  const s = String(expr || '').trim()
+  const parts = s.split(/\s+/)
+  if (parts.length === 5 && parts.slice(1).join(' ') === '* * * *') {
+    if (parts[0] === '*' || parts[0] === '*/1') return 'Every minute'
+    if (/^\*\/\d+$/.test(parts[0])) return `Every ${Number(parts[0].slice(2))} minutes`
+  }
+  if (parts.length === 5 && /^\d+$/.test(parts[0]) && Number(parts[0]) < 60 && parts.slice(2).join(' ') === '* * *') {
+    const minute = Number(parts[0])
+    const past = minute === 0 ? 'on the hour' : `at :${String(minute).padStart(2, '0')}`
+    if (parts[1] === '*' || parts[1] === '*/1') return `Hourly ${past}`
+    if (/^\*\/\d+$/.test(parts[1])) return `Every ${Number(parts[1].slice(2))} hours ${past}`
+  }
+  if (parts.length === 5) {
+    const time = fmtHour(parts[0], parts[1])
+    if (time && parts[2] === '*' && parts[3] === '*') {
+      if (parts[4] === '*') return `Daily at ${time}`
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      if (/^[0-6]$/.test(parts[4])) return `${days[Number(parts[4])]}s at ${time}`
+    }
+  }
+  return s || 'Cron schedule'
+}
+
 export async function readSchedules({ fetchImpl, authHeaders, previousSchedules, signal }) {
   try {
     const res = await fetchImpl(APP_SCHEDULES_PATH, { headers: authHeaders })

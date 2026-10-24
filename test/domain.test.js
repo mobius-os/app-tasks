@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   APP_SCHEDULES_PATH,
   REMINDERS_PATH,
+  describeCron,
   foldReminders,
   friendlyLoadError,
   friendlyScheduleLoadError,
@@ -192,4 +193,23 @@ test('summarizeTasks reports flat primitive counts', () => {
   ], 1_700_000_000_000)
 
   assert.deepEqual(summary, { item_count: 2, attention_count: 1, done_count: 1 })
+})
+
+test('describeCron labels minute, hourly and daily schedules', () => {
+  assert.equal(describeCron('* * * * *'), 'Every minute')
+  assert.equal(describeCron('*/1 * * * *'), 'Every minute')
+  assert.equal(describeCron('*/15 * * * *'), 'Every 15 minutes')
+  assert.equal(describeCron('0 * * * *'), 'Hourly on the hour')
+  assert.equal(describeCron('5 * * * *'), 'Hourly at :05')
+  assert.equal(describeCron('30 */1 * * *'), 'Hourly at :30')
+  assert.equal(describeCron('0 */6 * * *'), 'Every 6 hours on the hour')
+  assert.equal(describeCron('15 */2 * * *'), 'Every 2 hours at :15')
+  assert.equal(describeCron('0 9 * * *'), 'Daily at 9:00 AM')
+  assert.equal(describeCron('30 18 * * 1'), 'Mondays at 6:30 PM')
+})
+
+test('describeCron falls back to the raw expression for other shapes', () => {
+  assert.equal(describeCron('0 9 1 * *'), '0 9 1 * *')
+  assert.equal(describeCron('75 * * * *'), '75 * * * *')
+  assert.equal(describeCron(''), 'Cron schedule')
 })
