@@ -213,3 +213,15 @@ test('describeCron falls back to the raw expression for other shapes', () => {
   assert.equal(describeCron('75 * * * *'), '75 * * * *')
   assert.equal(describeCron(''), 'Cron schedule')
 })
+
+test('describeCron only claims an interval that stays even across midnight and the hour', () => {
+  // */5 hours runs 20:00 then 00:00; */7 minutes runs :56 then :00.
+  assert.equal(describeCron('0 */5 * * *'), '0 */5 * * *')
+  assert.equal(describeCron('30 */7 * * *'), '30 */7 * * *')
+  assert.equal(describeCron('0 */24 * * *'), '0 */24 * * *')
+  assert.equal(describeCron('0 */12 * * *'), 'Every 12 hours on the hour')
+  assert.equal(describeCron('*/7 * * * *'), '*/7 * * * *')
+  assert.equal(describeCron('*/45 * * * *'), '*/45 * * * *')
+  assert.equal(describeCron('*/0 * * * *'), '*/0 * * * *')
+  assert.equal(describeCron('*/30 * * * *'), 'Every 30 minutes')
+})

@@ -150,19 +150,30 @@ function fmtHour(minute, hour) {
   return `${displayHour}:${String(m).padStart(2, '0')} ${suffix}`
 }
 
+// The step of a `*` or `*/N` cron field, only when its runs are evenly spaced.
+// Cron restarts a step at the top of its field (`0 */5 * * *` runs at 20:00
+// then 00:00), so only steps that divide the field's period are uniform.
+function uniformStep(field, period) {
+  if (field === '*') return 1
+  const n = Number(/^\*\/(\d+)$/.exec(field)?.[1] || 0)
+  return n > 0 && n < period && period % n === 0 ? n : null
+}
+
 // A short human label for the common cron shapes; anything else is shown raw.
 export function describeCron(expr) {
   const s = String(expr || '').trim()
   const parts = s.split(/\s+/)
   if (parts.length === 5 && parts.slice(1).join(' ') === '* * * *') {
-    if (parts[0] === '*' || parts[0] === '*/1') return 'Every minute'
-    if (/^\*\/\d+$/.test(parts[0])) return `Every ${Number(parts[0].slice(2))} minutes`
+    const step = uniformStep(parts[0], 60)
+    if (step === 1) return 'Every minute'
+    if (step) return `Every ${step} minutes`
   }
   if (parts.length === 5 && /^\d+$/.test(parts[0]) && Number(parts[0]) < 60 && parts.slice(2).join(' ') === '* * *') {
     const minute = Number(parts[0])
     const past = minute === 0 ? 'on the hour' : `at :${String(minute).padStart(2, '0')}`
-    if (parts[1] === '*' || parts[1] === '*/1') return `Hourly ${past}`
-    if (/^\*\/\d+$/.test(parts[1])) return `Every ${Number(parts[1].slice(2))} hours ${past}`
+    const step = uniformStep(parts[1], 24)
+    if (step === 1) return `Hourly ${past}`
+    if (step) return `Every ${step} hours ${past}`
   }
   if (parts.length === 5) {
     const time = fmtHour(parts[0], parts[1])
