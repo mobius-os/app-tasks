@@ -7,7 +7,7 @@ import {
   Clock,
   TriangleExclamationErrorWarning,
 } from '@openai/apps-sdk-ui/components/Icon'
-import { describeCron, readSchedules, readTasks, sortTasks, normalizeUnixSeconds, summarizeTasks } from './domain.js'
+import { describeSchedule, readSchedules, readTasks, sortTasks, normalizeUnixSeconds, summarizeTasks } from './domain.js'
 
 // Tasks — a viewer for the agent's scheduled check-ins (its "self-reminders":
 // the relational follow-ups the Möbius agent schedules for itself, stored append-
@@ -515,7 +515,7 @@ export default function TasksApp({ appId, token }) {
                   </div>
                   <div className="tk-meta">
                     <div className="tk-meta-k">Schedule</div>
-                    <div className="tk-meta-v">{describeCron(job.cron)}</div>
+                    <div className="tk-meta-v">{describeSchedule(job)}</div>
                     <div className="tk-meta-k">Job</div>
                     <div className="tk-meta-v">{job.job || 'job.sh'}</div>
                   </div>

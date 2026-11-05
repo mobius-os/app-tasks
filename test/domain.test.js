@@ -5,6 +5,7 @@ import {
   APP_SCHEDULES_PATH,
   REMINDERS_PATH,
   describeCron,
+  describeSchedule,
   foldReminders,
   friendlyLoadError,
   friendlyScheduleLoadError,
@@ -224,4 +225,18 @@ test('describeCron only claims an interval that stays even across midnight and t
   assert.equal(describeCron('*/45 * * * *'), '*/45 * * * *')
   assert.equal(describeCron('*/0 * * * *'), '*/0 * * * *')
   assert.equal(describeCron('*/30 * * * *'), 'Every 30 minutes')
+})
+
+test('a timezone-owned schedule shows its real cadence, not the per-minute check', () => {
+  const [row] = sortSchedules([{ id: 1, name: 'Digest', cron: '* * * * *', zone_cron: '30 5 * * *', timezone: 'Europe/London' }])
+  assert.equal(row.zone_cron, '30 5 * * *')
+  assert.equal(describeSchedule(row), 'Daily at 5:30 AM (Europe/London)')
+  const [plain] = sortSchedules([{ id: 2, name: 'Poll', cron: '*/15 * * * *', zone_cron: null, timezone: null }])
+  assert.equal(plain.zone_cron, undefined)
+  assert.equal(describeSchedule(plain), 'Every 15 minutes')
+})
+
+test('out-of-range fixed times fall back to the raw expression', () => {
+  assert.equal(describeCron('0 25 * * *'), '0 25 * * *')
+  assert.equal(describeCron('75 9 * * *'), '75 9 * * *')
 })

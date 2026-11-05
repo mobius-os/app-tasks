@@ -131,6 +131,11 @@ function normalizeSchedule(record) {
     cron,
     job: record.job || 'job.sh',
     next_run: record.next_run || null,
+    // A timezone-owned schedule is served as a per-minute check (`cron`);
+    // its real cadence is `zone_cron` in `timezone`.
+    ...(typeof record.zone_cron === 'string' && record.zone_cron.trim() && typeof record.timezone === 'string'
+      ? { zone_cron: record.zone_cron.trim(), timezone: record.timezone }
+      : {}),
   }
 }
 
@@ -144,7 +149,7 @@ export function sortSchedules(schedules) {
 function fmtHour(minute, hour) {
   const h = Number(hour)
   const m = Number(minute)
-  if (!Number.isInteger(h) || !Number.isInteger(m)) return null
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return null
   const suffix = h >= 12 ? 'PM' : 'AM'
   const displayHour = h % 12 || 12
   return `${displayHour}:${String(m).padStart(2, '0')} ${suffix}`
@@ -205,4 +210,10 @@ export async function readSchedules({ fetchImpl, authHeaders, previousSchedules,
       retained: Array.isArray(previousSchedules),
     }
   }
+}
+
+/** The label for one schedule row: its owning timezone's cadence when it has one. */
+export function describeSchedule(schedule) {
+  if (schedule?.zone_cron) return `${describeCron(schedule.zone_cron)} (${schedule.timezone})`
+  return describeCron(schedule?.cron)
 }
