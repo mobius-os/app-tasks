@@ -131,6 +131,11 @@ function normalizeSchedule(record) {
     cron,
     job: record.job || 'job.sh',
     next_run: record.next_run || null,
+    // A timezone-owned schedule is served as a per-minute check (`cron`);
+    // its real cadence is `zone_cron` in `timezone`.
+    ...(typeof record.zone_cron === 'string' && record.zone_cron.trim() && typeof record.timezone === 'string'
+      ? { zone_cron: record.zone_cron.trim(), timezone: record.timezone }
+      : {}),
   }
 }
 
@@ -139,6 +144,51 @@ export function sortSchedules(schedules) {
     .map(normalizeSchedule)
     .filter(Boolean)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)) || Number(a.id) - Number(b.id))
+}
+
+function fmtHour(minute, hour) {
+  const h = Number(hour)
+  const m = Number(minute)
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return null
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  const displayHour = h % 12 || 12
+  return `${displayHour}:${String(m).padStart(2, '0')} ${suffix}`
+}
+
+// The step of a `*` or `*/N` cron field, only when its runs are evenly spaced.
+// Cron restarts a step at the top of its field (`0 */5 * * *` runs at 20:00
+// then 00:00), so only steps that divide the field's period are uniform.
+function uniformStep(field, period) {
+  if (field === '*') return 1
+  const n = Number(/^\*\/(\d+)$/.exec(field)?.[1] || 0)
+  return n > 0 && n < period && period % n === 0 ? n : null
+}
+
+// A short human label for the common cron shapes; anything else is shown raw.
+export function describeCron(expr) {
+  const s = String(expr || '').trim()
+  const parts = s.split(/\s+/)
+  if (parts.length === 5 && parts.slice(1).join(' ') === '* * * *') {
+    const step = uniformStep(parts[0], 60)
+    if (step === 1) return 'Every minute'
+    if (step) return `Every ${step} minutes`
+  }
+  if (parts.length === 5 && /^\d+$/.test(parts[0]) && Number(parts[0]) < 60 && parts.slice(2).join(' ') === '* * *') {
+    const minute = Number(parts[0])
+    const past = minute === 0 ? 'on the hour' : `at :${String(minute).padStart(2, '0')}`
+    const step = uniformStep(parts[1], 24)
+    if (step === 1) return `Hourly ${past}`
+    if (step) return `Every ${step} hours ${past}`
+  }
+  if (parts.length === 5) {
+    const time = fmtHour(parts[0], parts[1])
+    if (time && parts[2] === '*' && parts[3] === '*') {
+      if (parts[4] === '*') return `Daily at ${time}`
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      if (/^[0-6]$/.test(parts[4])) return `${days[Number(parts[4])]}s at ${time}`
+    }
+  }
+  return s || 'Cron schedule'
 }
 
 export async function readSchedules({ fetchImpl, authHeaders, previousSchedules, signal }) {
@@ -160,4 +210,10 @@ export async function readSchedules({ fetchImpl, authHeaders, previousSchedules,
       retained: Array.isArray(previousSchedules),
     }
   }
+}
+
+/** The label for one schedule row: its owning timezone's cadence when it has one. */
+export function describeSchedule(schedule) {
+  if (schedule?.zone_cron) return `${describeCron(schedule.zone_cron)} (${schedule.timezone})`
+  return describeCron(schedule?.cron)
 }

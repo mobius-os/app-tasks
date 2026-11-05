@@ -7,7 +7,7 @@ import {
   Clock,
   TriangleExclamationErrorWarning,
 } from '@openai/apps-sdk-ui/components/Icon'
-import { readSchedules, readTasks, sortTasks, normalizeUnixSeconds, summarizeTasks } from './domain.js'
+import { describeSchedule, readSchedules, readTasks, sortTasks, normalizeUnixSeconds, summarizeTasks } from './domain.js'
 
 // Tasks — a viewer for the agent's scheduled check-ins (its "self-reminders":
 // the relational follow-ups the Möbius agent schedules for itself, stored append-
@@ -205,32 +205,6 @@ function fmtRel(unixSec) {
   const normalized = normalizeUnixSeconds(unixSec)
   if (!normalized) return ''
   try { return formatDistanceToNow(new Date(normalized * 1000), { addSuffix: true }) } catch { return '' }
-}
-
-function fmtHour(minute, hour) {
-  const h = Number(hour)
-  const m = Number(minute)
-  if (!Number.isInteger(h) || !Number.isInteger(m)) return null
-  const suffix = h >= 12 ? 'PM' : 'AM'
-  const displayHour = h % 12 || 12
-  return `${displayHour}:${String(m).padStart(2, '0')} ${suffix}`
-}
-
-function describeCron(expr) {
-  const s = String(expr || '').trim()
-  const parts = s.split(/\s+/)
-  if (/^\*\/\d+$/.test(parts[0]) && parts.slice(1).join(' ') === '* * * *') {
-    return `Every ${parts[0].slice(2)} minutes`
-  }
-  if (parts.length === 5) {
-    const time = fmtHour(parts[0], parts[1])
-    if (time && parts[2] === '*' && parts[3] === '*') {
-      if (parts[4] === '*') return `Daily at ${time}`
-      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-      if (/^[0-6]$/.test(parts[4])) return `${days[Number(parts[4])]}s at ${time}`
-    }
-  }
-  return s || 'Cron schedule'
 }
 
 function emitSignal(name, payload) {
@@ -541,7 +515,7 @@ export default function TasksApp({ appId, token }) {
                   </div>
                   <div className="tk-meta">
                     <div className="tk-meta-k">Schedule</div>
-                    <div className="tk-meta-v">{describeCron(job.cron)}</div>
+                    <div className="tk-meta-v">{describeSchedule(job)}</div>
                     <div className="tk-meta-k">Job</div>
                     <div className="tk-meta-v">{job.job || 'job.sh'}</div>
                   </div>
